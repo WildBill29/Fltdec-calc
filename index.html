@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Flight Deck">
-<link rel="manifest" href="/manifest.json">
+<link rel="manifest" href="/Fltdec-calc/manifest.json">
 <!-- No external font dependencies — fully offline capable -->
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -767,7 +767,7 @@ calcShow();
 // ══════════════════════════════
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+    navigator.serviceWorker.register('/Fltdec-calc/service-worker.js', { scope: '/Fltdec-calc/' })
       .then(reg => {
         console.log('SW registered:', reg.scope);
         // Force update check

@@ -1,15 +1,17 @@
-const CACHE = 'flightdeck-v7';
-const ORIGIN = self.location.origin;
+const CACHE = 'flightdeck-v8';
+const BASE = '/Fltdec-calc/';
+const FILES = [
+  BASE,
+  BASE + 'index.html',
+  BASE + 'manifest.json',
+  BASE + 'icon-192.png',
+  BASE + 'icon-512.png'
+];
 
 self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE).then(cache =>
-      fetch(ORIGIN + '/index.html', { cache: 'no-store' })
-        .then(response => {
-          cache.put(ORIGIN + '/', response.clone());
-          cache.put(ORIGIN + '/index.html', response.clone());
-          return cache.put(new Request(ORIGIN + '/'), response);
-        })
+      cache.addAll(FILES)
     ).then(() => self.skipWaiting())
   );
 });
@@ -26,33 +28,24 @@ self.addEventListener('fetch', event => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
     caches.open(CACHE).then(async cache => {
-      // Try exact match first
+      // Try exact match
       let cached = await cache.match(event.request);
       if (cached) return cached;
 
-      // Try stripping query strings
-      const url = new URL(event.request.url);
-      url.search = '';
-      cached = await cache.match(url.toString());
+      // Try base path fallback
+      cached = await cache.match(self.location.origin + BASE);
       if (cached) return cached;
 
-      // Fall back to root
-      cached = await cache.match(ORIGIN + '/');
-      if (cached) return cached;
-      cached = await cache.match(ORIGIN + '/index.html');
-      if (cached) return cached;
-
-      // Nothing cached — try network
+      // Try network and cache result
       try {
         const response = await fetch(event.request);
         if (response && response.status === 200) {
           cache.put(event.request, response.clone());
-          cache.put(ORIGIN + '/', response.clone());
-          cache.put(ORIGIN + '/index.html', response.clone());
         }
         return response;
       } catch {
-        return new Response('<h1>Offline</h1>', { headers: { 'Content-Type': 'text/html' } });
+        // Offline fallback
+        return cache.match(self.location.origin + BASE + 'index.html');
       }
     })
   );
