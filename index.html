@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Flight Deck Timer</title>
+<meta name="theme-color" content="#0b220b">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Flight Deck">
+<link rel="manifest" href="/manifest.json">
+<!-- No external font dependencies — fully offline capable -->
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+:root {
+  --show-dim:    rgba(200,255,192,0.45);
+  --show-dimmer: rgba(200,255,192,0.22);
+  --show-panel:  #0f2e0f;
+  --show-border: rgba(200,255,192,0.14);
+  --show-glow:   rgba(57,255,20,0.18);
+  --rest-accent: #c0dfff;
+  --rest-dim:    rgba(192,223,255,0.45);
+  --rest-dimmer: rgba(192,223,255,0.22);
+  --rest-panel:  #0c1830;
+  --rest-border: rgba(192,223,255,0.14);
+  --rest-glow:   rgba(0,170,255,0.18);
+  --picker-text: #c0c0c0;   /* number color in pickers */
+  --result-text: #c0c0c0;   /* result value color on show side */
+  --mono: 'Courier New', 'Courier', monospace;
+  --head: 'Arial Narrow', 'Arial', sans-serif;
+}
+body {
+  font-family: var(--head);
+  min-height: 100vh;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 0 0 60px;
+  transition: background 0.5s;
+  overflow-x: hidden;
+}
+body.show-mode { background: radial-gradient(ellipse at 50% 0%, #1c4a22 0%, #0b220b 65%); }
+body.rest-mode { background: radial-gradient(ellipse at 50% 0%, #0e2040 0%, #080f1e 65%); }
+body::after {
+  content:''; position:fixed; inset:0; pointer-events:none; z-index:200;
+  background: repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0,0,0,0.025) 3px, rgba(0,0,0,0.025) 4px);
+}
+
+/* ══ HEADER ══ */
+.instrument-header {
+  width:100%; max-width:460px;
+  background: linear-gradient(180deg,#2e2e2e 0%,#1c1c1c 45%,#111 100%);
+  border-bottom: 3px solid #555;
+  padding: 14px 18px 12px;
+  display: flex; align-items: center; justify-content: space-between;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.75), inset 0 1px 0 rgba(255,255,255,0.07);
+  position: relative;
+}
+.instrument-header::before {
+  content:''; position:absolute; inset:0; pointer-events:none;
+  background: repeating-linear-gradient(90deg, transparent, transparent 44px,
+    rgba(255,255,255,0.012) 44px, rgba(255,255,255,0.012) 45px);
+}
+.wordmark { display:flex; flex-direction:column; gap:1px; }
+.wordmark-top { font-size:1rem; font-weight:700; letter-spacing:0.28em; text-transform:uppercase; color:#aaa; line-height:1; }
+.wordmark-sub { font-size:0.5rem; font-weight:400; letter-spacing:0.38em; text-transform:uppercase; color:#3a3a3a; line-height:1; }
+.gear-btn {
+  background:none; border:none; cursor:pointer;
+  color:#555; font-size:1.2rem; padding:5px;
+  transition:color 0.2s, transform 0.4s; line-height:1;
+}
+.gear-btn:hover { color:#bbb; transform:rotate(60deg); }
+
+/* ══ METAL SLIDER ══ */
+.slider-col { display:flex; flex-direction:column; align-items:center; }
+.slider-assembly { display:flex; align-items:center; gap:11px; }
+.slider-tag {
+  font-size:0.85rem; font-weight:700; letter-spacing:0.2em; text-transform:uppercase;
+  transition:opacity 0.3s;
+}
+.slider-tag.show { color:#c8ffc0; }
+.slider-tag.rest { color:#c0dfff; }
+body.show-mode .slider-tag.rest { opacity:0.2; }
+body.rest-mode  .slider-tag.show { opacity:0.2; }
+
+.metal-track {
+  width:78px; height:30px; border-radius:15px;
+  position:relative; cursor:pointer;
+  border:1.5px solid #1a1a1a;
+  box-shadow: inset 0 3px 6px rgba(0,0,0,0.75), inset 0 -1px 2px rgba(255,255,255,0.04), 0 1px 0 rgba(255,255,255,0.06);
+  transition:background 0.35s; user-select:none;
+}
+body.show-mode .metal-track { background:linear-gradient(90deg,rgba(57,255,20,0.28) 0%,rgba(57,255,20,0.12) 50%,#141414 50%); }
+body.rest-mode  .metal-track { background:linear-gradient(90deg,#141414 50%,rgba(0,170,255,0.12) 50%,rgba(0,170,255,0.28) 100%); }
+
+.metal-knob {
+  width:34px; height:34px; border-radius:50%;
+  position:absolute; top:50%; transform:translateY(-50%);
+  background:radial-gradient(circle at 36% 30%,#f2f2f2 0%,#cccccc 22%,#a0a0a0 50%,#707070 78%,#484848 100%);
+  border:1.5px solid #2a2a2a;
+  box-shadow:0 3px 10px rgba(0,0,0,0.75),inset 0 1px 3px rgba(255,255,255,0.55),inset 0 -1px 2px rgba(0,0,0,0.35);
+  transition:left 0.28s cubic-bezier(0.4,0,0.2,1), box-shadow 0.3s;
+}
+.metal-knob::before { content:''; position:absolute; inset:6px; border-radius:50%; border:1px solid rgba(0,0,0,0.12); }
+.metal-knob::after {
+  content:''; position:absolute; top:6px; left:8px; width:10px; height:6px;
+  border-radius:50%; background:rgba(255,255,255,0.35); transform:rotate(-20deg);
+}
+body.show-mode .metal-knob { left:-3px; box-shadow:0 3px 10px rgba(0,0,0,0.75),inset 0 1px 3px rgba(255,255,255,0.55),0 0 14px rgba(57,255,20,0.35); }
+body.rest-mode  .metal-knob { left:calc(100% - 31px); box-shadow:0 3px 10px rgba(0,0,0,0.75),inset 0 1px 3px rgba(255,255,255,0.55),0 0 14px rgba(0,170,255,0.35); }
+
+.mode-dot { width:7px; height:7px; border-radius:50%; margin-top:5px; transition:background 0.3s, box-shadow 0.3s; }
+body.show-mode .mode-dot { background:#39ff14; box-shadow:0 0 8px #39ff14; }
+body.rest-mode  .mode-dot { background:#00aaff; box-shadow:0 0 8px #00aaff; }
+
+/* ══ CARD ══ */
+.card { width:100%; max-width:460px; padding:26px 22px 34px; transition:background 0.5s; }
+body.show-mode .card { background:var(--show-panel); border-top:1px solid var(--show-border); }
+body.rest-mode  .card { background:var(--rest-panel); border-top:1px solid var(--rest-border); }
+.panel { display:none; }
+.panel.active { display:block; }
+
+.field-lbl {
+  font-size:0.6rem; font-weight:500; letter-spacing:0.38em;
+  text-transform:uppercase; margin-bottom:6px; transition:color 0.4s;
+}
+body.show-mode .field-lbl { color:var(--show-dim); }
+body.rest-mode  .field-lbl { color:var(--rest-dim); }
+
+/* ══ UP/DOWN PICKER ══ */
+.field-group { margin-bottom:18px; }
+.updown-picker {
+  display:flex; align-items:center;
+  border-radius:7px; border:1px solid;
+  background:rgba(0,0,0,0.38); overflow:hidden;
+  transition:border-color 0.3s, box-shadow 0.3s;
+}
+body.show-mode .updown-picker { border-color:var(--show-border); }
+body.show-mode .updown-picker:focus-within { border-color:rgba(200,255,192,0.4); box-shadow:0 0 10px var(--show-glow); }
+body.rest-mode  .updown-picker { border-color:var(--rest-border); }
+body.rest-mode  .updown-picker:focus-within { border-color:rgba(192,223,255,0.4); box-shadow:0 0 10px var(--rest-glow); }
+
+.picker-unit { display:flex; flex-direction:column; align-items:center; flex:1; }
+.picker-btn {
+  width:100%; padding:6px 0;
+  background:rgba(255,255,255,0.04); border:none; cursor:pointer;
+  font-size:1rem; line-height:1; color:rgba(255,255,255,0.3);
+  transition:background 0.15s, color 0.15s;
+  user-select:none; font-family:var(--head);
+}
+.picker-btn:active { background:rgba(255,255,255,0.1); color:rgba(255,255,255,0.7); }
+
+.picker-display {
+  font-family:var(--head); font-size:1.7rem; font-weight:600;
+  letter-spacing:0.04em; padding:4px 0; min-width:48px; text-align:center;
+  color: var(--picker-text);
+}
+.picker-display.small { font-size:1.3rem; }
+
+.picker-sep {
+  font-family:var(--head); font-size:1.7rem; font-weight:600;
+  color:rgba(255,255,255,0.2); padding:0 2px; align-self:center;
+}
+.picker-sep.small { font-size:1.3rem; }
+
+/* ══ CHECKBOX PILLS ══ */
+.checkbox-group { display:flex; gap:10px; margin-bottom:20px; }
+.cb-pill {
+  flex:1; display:flex; align-items:center; gap:8px;
+  padding:9px 12px; border-radius:6px; cursor:pointer;
+  border:1px solid rgba(255,255,255,0.06);
+  background:rgba(0,0,0,0.2); user-select:none;
+  transition:background 0.2s, border-color 0.2s;
+}
+.cb-pill:hover { background:rgba(0,0,0,0.35); }
+/* No background or border change when active — only checkmark + bold */
+
+.cb-box {
+  width:17px; height:17px; border-radius:3px; border:1.5px solid;
+  display:flex; align-items:center; justify-content:center;
+  flex-shrink:0; font-size:10px; font-weight:900; color:#c0c0c0;
+  transition:background 0.2s, border-color 0.2s;
+}
+body.show-mode .cb-box { border-color:rgba(200,255,192,0.4); }
+
+/* cb-text matches picker number color */
+.cb-text {
+  font-size:0.75rem; font-weight:600; letter-spacing:0.18em;
+  text-transform:uppercase;
+  color: var(--picker-text);
+  transition: font-weight 0.1s;
+}
+.cb-pill.active-show .cb-text { font-weight:700; }
+
+/* ══ DIVIDER ══ */
+.divider { height:1px; margin:16px 0; transition:background 0.4s; }
+body.show-mode .divider { background:linear-gradient(90deg,transparent,rgba(200,255,192,0.2),transparent); }
+body.rest-mode  .divider { background:linear-gradient(90deg,transparent,rgba(192,223,255,0.2),transparent); }
+
+/* ══ RESULT ROW ══ */
+.result-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 14px; border-radius:8px;
+  background:rgba(0,0,0,0.25); border:1px solid;
+  margin-bottom:9px; transition:border-color 0.4s;
+}
+body.show-mode .result-row { border-color:var(--show-border); }
+body.rest-mode  .result-row { border-color:var(--rest-border); }
+
+.result-left { display:flex; flex-direction:column; gap:2px; }
+.result-name {
+  font-size:0.62rem; font-weight:600; letter-spacing:0.3em;
+  text-transform:uppercase; transition:color 0.4s;
+}
+body.show-mode .result-name { color:var(--show-dim); }
+body.rest-mode  .result-name { color:var(--rest-dim); }
+
+.result-offset { font-family:var(--mono); font-size:0.65rem; transition:color 0.4s; }
+body.show-mode .result-offset { color:var(--show-dimmer); }
+body.rest-mode  .result-offset { color:var(--rest-dimmer); }
+
+/* Show side values — match picker text color */
+.result-value-show {
+  font-family: var(--head);
+  font-size:1.65rem; font-weight:600; letter-spacing:0.04em;
+  color: var(--picker-text);
+}
+
+/* Rest side values — match UTC clock (rest-accent) */
+.result-value-rest {
+  font-family: var(--head);
+  font-size:1.65rem; font-weight:600; letter-spacing:0.04em;
+  color: var(--rest-accent);
+  text-shadow:0 0 14px rgba(150,200,255,0.35);
+}
+
+/* ══ VAN ROW ══ */
+.van-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 14px; border-radius:8px;
+  background:rgba(0,0,0,0.25); border:1px solid;
+  margin-bottom:9px; gap:10px; transition:border-color 0.4s;
+}
+body.show-mode .van-row { border-color:var(--show-border); }
+.van-left { display:flex; flex-direction:column; gap:4px; flex:1; }
+.van-toggle { display:flex; align-items:center; gap:7px; cursor:pointer; user-select:none; }
+.van-manual-wrap { margin-top:10px; }
+
+/* ══ UTC CLOCK ══ */
+.utc-block { margin-bottom:20px; }
+.utc-display {
+  font-family: var(--head);
+  font-size:2.7rem; font-weight:600; text-align:center;
+  padding:13px 16px 9px; border-radius:9px;
+  background:rgba(0,0,0,0.42); border:1px solid rgba(192,223,255,0.14);
+  color: var(--rest-accent);
+  text-shadow:0 0 20px rgba(0,170,255,0.35), 0 0 40px rgba(0,170,255,0.15);
+  letter-spacing:0.07em;
+}
+.utc-tag {
+  font-size:0.55rem; font-weight:400; letter-spacing:0.38em;
+  color:rgba(192,223,255,0.28); text-align:center; margin-top:5px; text-transform:uppercase;
+}
+.utc-manual-row {
+  display:flex; align-items:center; gap:8px;
+  margin-top:11px; cursor:pointer; user-select:none;
+}
+.utc-manual-label {
+  font-size:0.65rem; font-weight:500; letter-spacing:0.2em;
+  text-transform:uppercase; color:rgba(192,223,255,0.32);
+}
+.utc-manual-cb {
+  width:17px; height:17px; border-radius:3px;
+  border:1.5px solid rgba(192,223,255,0.35);
+  display:flex; align-items:center; justify-content:center;
+  font-size:10px; font-weight:900; color:#000; flex-shrink:0;
+  transition:background 0.2s, box-shadow 0.2s;
+}
+.utc-manual-input { margin-top:10px; }
+
+/* REST — wake time picker display matches rest-accent */
+#restPanel .picker-display { color: var(--rest-accent); }
+#restPanel .picker-sep { color: rgba(192,223,255,0.3); }
+
+/* Timer display */
+.timer-display .result-value-rest {
+  font-size:1.9rem;
+  color: var(--rest-accent);
+  text-shadow:0 0 14px rgba(150,200,255,0.35);
+}
+
+.timer-note {
+  font-size:0.6rem; font-weight:400; letter-spacing:0.15em;
+  color:rgba(192,223,255,0.25); text-align:center; margin-top:8px; text-transform:uppercase;
+}
+
+/* ══ SETTINGS ══ */
+.settings-overlay {
+  position:fixed; inset:0; background:rgba(0,0,0,0.8);
+  z-index:300; display:none; align-items:flex-start;
+  justify-content:center; padding-top:52px; backdrop-filter:blur(6px);
+}
+.settings-overlay.open { display:flex; }
+.settings-panel {
+  width:100%; max-width:420px; background:#111; border-radius:12px;
+  border:1px solid #252525; box-shadow:0 24px 64px rgba(0,0,0,0.85);
+  overflow:hidden; animation:slideDown 0.22s ease;
+}
+@keyframes slideDown { from{opacity:0;transform:translateY(-16px)} to{opacity:1;transform:translateY(0)} }
+.settings-header {
+  background:linear-gradient(180deg,#1e1e1e,#141414);
+  padding:14px 18px; display:flex; align-items:center; justify-content:space-between;
+  border-bottom:1px solid #222;
+}
+.settings-title { font-size:0.82rem; font-weight:600; letter-spacing:0.3em; text-transform:uppercase; color:#888; }
+.settings-close { background:none; border:none; color:#555; font-size:1.2rem; cursor:pointer; padding:3px 7px; border-radius:4px; font-family:var(--head); transition:color 0.2s; }
+.settings-close:hover { color:#ccc; }
+.settings-body { padding:18px; max-height:72vh; overflow-y:auto; }
+.settings-section { font-size:0.58rem; font-weight:500; letter-spacing:0.32em; text-transform:uppercase; color:#3a3a3a; margin:14px 0 9px; padding-bottom:5px; border-bottom:1px solid #1c1c1c; }
+.settings-section:first-child { margin-top:0; }
+.settings-row { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.settings-row-lbl { font-size:0.8rem; font-weight:500; letter-spacing:0.06em; color:#666; }
+.offset-input { display:flex; align-items:center; gap:5px; }
+.offset-input input[type="number"] {
+  width:42px; padding:5px; font-family:var(--mono); font-size:0.88rem;
+  text-align:center; background:#1a1a1a; border:1px solid #2c2c2c;
+  border-radius:4px; color:#bbb; outline:none; -moz-appearance:textfield;
+}
+.offset-input input[type="number"]::-webkit-inner-spin-button { display:none; }
+.offset-sep { font-family:var(--mono); color:#333; font-size:0.9rem; }
+.settings-reset {
+  display:block; width:100%; margin-top:18px; padding:9px;
+  background:#181818; border:1px solid #282828; border-radius:5px;
+  color:#555; font-family:var(--head); font-size:0.68rem;
+  letter-spacing:0.22em; text-transform:uppercase;
+  cursor:pointer; transition:background 0.2s, color 0.2s;
+}
+.settings-reset:hover { background:#202020; color:#999; }
+</style>
+</head>
+<body class="show-mode">
+
+<!-- HEADER -->
+<div class="instrument-header">
+  <div class="wordmark">
+    <div class="wordmark-top">Flight Deck</div>
+    <div class="wordmark-sub">Time Calculator</div>
+  </div>
+  <div class="slider-col">
+    <div class="slider-assembly">
+      <span class="slider-tag show">SHOW</span>
+      <div class="metal-track" onclick="toggleMode()">
+        <div class="metal-knob"></div>
+      </div>
+      <span class="slider-tag rest">REST</span>
+    </div>
+    <div class="mode-dot"></div>
+  </div>
+  <button class="gear-btn" onclick="openSettings()">⚙</button>
+</div>
+
+<!-- CARD -->
+<div class="card">
+
+  <!-- ══ SHOW PANEL ══ -->
+  <div class="panel active" id="showPanel">
+
+    <div class="field-group">
+      <div class="field-lbl">Departure</div>
+      <div class="updown-picker">
+        <div class="picker-unit">
+          <button class="picker-btn" onclick="stepPicker('dep','h',1)">▲</button>
+          <div class="picker-display" id="dep_h_display">00</div>
+          <button class="picker-btn" onclick="stepPicker('dep','h',-1)">▼</button>
+        </div>
+        <div class="picker-sep">:</div>
+        <div class="picker-unit">
+          <button class="picker-btn" onclick="stepPicker('dep','m',1)">▲</button>
+          <div class="picker-display" id="dep_m_display">00</div>
+          <button class="picker-btn" onclick="stepPicker('dep','m',-1)">▼</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="checkbox-group">
+      <div class="cb-pill" id="crashPill" onclick="selectMode('crash')">
+        <div class="cb-box" id="crashBox"></div>
+        <span class="cb-text">Crash Pad</span>
+      </div>
+      <div class="cb-pill" id="domesticPill" onclick="selectMode('domestic')">
+        <div class="cb-box" id="domesticBox"></div>
+        <span class="cb-text">Domestic</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="result-row">
+      <div class="result-left">
+        <div class="result-name">Alarm</div>
+        <div class="result-offset" id="alarmOffset">3:00</div>
+      </div>
+      <div class="result-value-show" id="showAlarm">--:--</div>
+    </div>
+
+    <div class="van-row">
+      <div class="van-left">
+        <div class="van-toggle" id="vanToggle" onclick="toggleVanManual()">
+          <div class="cb-box" id="vanManualBox" style="border-color:rgba(200,255,192,0.4)"></div>
+          <div class="result-name" id="vanLeaveLabel">Van</div>
+        </div>
+        <div class="result-offset" id="vanOffset">2:00</div>
+        <div class="van-manual-wrap" id="vanManualWrap" style="display:none;">
+          <div class="updown-picker" style="border-radius:6px;">
+            <div class="picker-unit">
+              <button class="picker-btn" onclick="stepPicker('van','h',1)">▲</button>
+              <div class="picker-display small" id="van_h_display">00</div>
+              <button class="picker-btn" onclick="stepPicker('van','h',-1)">▼</button>
+            </div>
+            <div class="picker-sep small">:</div>
+            <div class="picker-unit">
+              <button class="picker-btn" onclick="stepPicker('van','m',1)">▲</button>
+              <div class="picker-display small" id="van_m_display">00</div>
+              <button class="picker-btn" onclick="stepPicker('van','m',-1)">▼</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="result-value-show" id="showVan">--:--</div>
+    </div>
+
+    <div class="result-row">
+      <div class="result-left">
+        <div class="result-name">Show</div>
+        <div class="result-offset" id="showOffset">1:30</div>
+      </div>
+      <div class="result-value-show" id="showShow">--:--</div>
+    </div>
+
+  </div><!-- /showPanel -->
+
+  <!-- ══ REST PANEL ══ -->
+  <div class="panel" id="restPanel">
+
+    <div class="utc-block">
+      <div class="utc-display" id="utcClock">--:--:--</div>
+      <div class="utc-tag">Coordinated Universal Time</div>
+      <div class="utc-manual-row" onclick="toggleUTCManual()">
+        <div class="utc-manual-cb" id="utcManualBox"></div>
+        <span class="utc-manual-label">Manual UTC Override</span>
+      </div>
+      <div class="utc-manual-input" id="utcManualWrap" style="display:none;">
+        <div class="updown-picker" style="margin-top:8px;">
+          <div class="picker-unit">
+            <button class="picker-btn" onclick="stepPicker('utc','h',1)">▲</button>
+            <div class="picker-display" id="utc_h_display">00</div>
+            <button class="picker-btn" onclick="stepPicker('utc','h',-1)">▼</button>
+          </div>
+          <div class="picker-sep">:</div>
+          <div class="picker-unit">
+            <button class="picker-btn" onclick="stepPicker('utc','m',1)">▲</button>
+            <div class="picker-display" id="utc_m_display">00</div>
+            <button class="picker-btn" onclick="stepPicker('utc','m',-1)">▼</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field-group">
+      <div class="field-lbl">Wake Time (UTC)</div>
+      <div class="updown-picker">
+        <div class="picker-unit">
+          <button class="picker-btn" onclick="stepPicker('wake','h',1)">▲</button>
+          <div class="picker-display" id="wake_h_display">00</div>
+          <button class="picker-btn" onclick="stepPicker('wake','h',-1)">▼</button>
+        </div>
+        <div class="picker-sep">:</div>
+        <div class="picker-unit">
+          <button class="picker-btn" onclick="stepPicker('wake','m',1)">▲</button>
+          <div class="picker-display" id="wake_m_display">00</div>
+          <button class="picker-btn" onclick="stepPicker('wake','m',-1)">▼</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="result-row timer-display">
+      <div class="result-left">
+        <div class="result-name">Set Timer For</div>
+        <div class="result-offset">hr : min : sec</div>
+      </div>
+      <div class="result-value-rest" id="restTimer">--:--:--</div>
+    </div>
+
+    <p class="timer-note">Live · Always accurate when you return</p>
+
+  </div><!-- /restPanel -->
+
+</div><!-- /card -->
+
+<!-- ══ SETTINGS ══ -->
+<div class="settings-overlay" id="settingsOverlay" onclick="overlayClick(event)">
+  <div class="settings-panel">
+    <div class="settings-header">
+      <span class="settings-title">⚙ Offset Settings</span>
+      <button class="settings-close" onclick="closeSettings()">✕</button>
+    </div>
+    <div class="settings-body">
+      <div class="settings-section">Standard</div>
+      <div class="settings-row"><span class="settings-row-lbl">Alarm offset</span><div class="offset-input"><input type="number" id="s_std_alarm_h" min="0" max="23" value="3" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_std_alarm_m" min="0" max="59" value="0" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-row"><span class="settings-row-lbl">Van offset</span><div class="offset-input"><input type="number" id="s_std_van_h" min="0" max="23" value="2" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_std_van_m" min="0" max="59" value="0" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-section">Crash Pad</div>
+      <div class="settings-row"><span class="settings-row-lbl">Alarm offset</span><div class="offset-input"><input type="number" id="s_crash_alarm_h" min="0" max="23" value="3" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_crash_alarm_m" min="0" max="59" value="15" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-row"><span class="settings-row-lbl">Leave offset</span><div class="offset-input"><input type="number" id="s_crash_leave_h" min="0" max="23" value="2" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_crash_leave_m" min="0" max="59" value="0" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-section">Domestic</div>
+      <div class="settings-row"><span class="settings-row-lbl">Alarm offset</span><div class="offset-input"><input type="number" id="s_dom_alarm_h" min="0" max="23" value="2" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_dom_alarm_m" min="0" max="59" value="30" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-row"><span class="settings-row-lbl">Van offset</span><div class="offset-input"><input type="number" id="s_dom_van_h" min="0" max="23" value="1" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_dom_van_m" min="0" max="59" value="30" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-row"><span class="settings-row-lbl">Show offset (Domestic)</span><div class="offset-input"><input type="number" id="s_dom_show_h" min="0" max="23" value="1" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_dom_show_m" min="0" max="59" value="0" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-section">Manual Van → Alarm</div>
+      <div class="settings-row"><span class="settings-row-lbl">Alarm offset from Van</span><div class="offset-input"><input type="number" id="s_van_alarm_h" min="0" max="23" value="1" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_van_alarm_m" min="0" max="59" value="0" oninput="saveSettings();calcShow()"></div></div>
+      <div class="settings-section">Show Time</div>
+      <div class="settings-row"><span class="settings-row-lbl">Show offset</span><div class="offset-input"><input type="number" id="s_show_h" min="0" max="23" value="1" oninput="saveSettings();calcShow()"><span class="offset-sep">:</span><input type="number" id="s_show_m" min="0" max="59" value="30" oninput="saveSettings();calcShow()"></div></div>
+      <button class="settings-reset" onclick="resetSettings()">↺ Reset to Defaults</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════
+// PICKER STATE
+// ══════════════════════════════
+const pickers = {
+  dep:  { h:0, m:0 },
+  van:  { h:0, m:0 },
+  wake: { h:0, m:0 },
+  utc:  { h:0, m:0 },
+};
+let utcManualOffset = 0;
+
+function stepPicker(id, field, dir) {
+  const p = pickers[id];
+  if (field==='h') p.h = (p.h+dir+24)%24;
+  else             p.m = (p.m+dir+60)%60;
+  updatePickerDisplay(id);
+  if (id==='utc') {
+    const now = new Date();
+    const realUTCMins = now.getUTCHours()*60 + now.getUTCMinutes() + now.getUTCSeconds()/60;
+    utcManualOffset = (p.h*60+p.m - realUTCMins)*60000;
+  }
+  if (id==='dep'||id==='van') calcShow();
+  if (id==='wake'||id==='utc') calcRest();
+}
+
+function updatePickerDisplay(id) {
+  const p = pickers[id];
+  const hEl = document.getElementById(id+'_h_display');
+  const mEl = document.getElementById(id+'_m_display');
+  if (hEl) hEl.textContent = String(p.h).padStart(2,'0');
+  if (mEl) mEl.textContent = String(p.m).padStart(2,'0');
+}
+
+function getPickerMins(id) { return pickers[id].h*60+pickers[id].m; }
+
+// ══════════════════════════════
+// STATE
+// ══════════════════════════════
+let isRestMode = false;
+let showMode   = 'none';
+let vanManual  = false;
+let utcManual  = false;
+
+// ══════════════════════════════
+// SETTINGS
+// ══════════════════════════════
+const DEFAULTS = {
+  std_alarm_h:3,std_alarm_m:0,std_van_h:2,std_van_m:0,
+  crash_alarm_h:3,crash_alarm_m:15,crash_leave_h:2,crash_leave_m:0,
+  dom_alarm_h:2,dom_alarm_m:30,dom_van_h:1,dom_van_m:30,
+  van_alarm_h:1,van_alarm_m:0,show_h:1,show_m:30,dom_show_h:1,dom_show_m:0
+};
+function loadSettings() {
+  let saved={};
+  try{saved=JSON.parse(localStorage.getItem('ftc_v5')||'{}');}catch(e){}
+  const s=Object.assign({},DEFAULTS,saved);
+  for(const k in s){const el=document.getElementById('s_'+k);if(el)el.value=s[k];}
+}
+function saveSettings() {
+  const s={};
+  for(const k in DEFAULTS){const el=document.getElementById('s_'+k);s[k]=el?(parseInt(el.value)||0):DEFAULTS[k];}
+  try{localStorage.setItem('ftc_v5',JSON.stringify(s));}catch(e){}
+}
+function resetSettings(){try{localStorage.removeItem('ftc_v5');}catch(e){}loadSettings();calcShow();}
+function getOffset(key){
+  return(parseInt(document.getElementById('s_'+key+'_h').value)||0)*60+
+         (parseInt(document.getElementById('s_'+key+'_m').value)||0);
+}
+function fmtOffset(mins){return Math.floor(mins/60)+':'+String(mins%60).padStart(2,'0');}
+function fmtTime24(totalMins){
+  const t=((totalMins%1440)+1440)%1440;
+  return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+}
+
+// ══════════════════════════════
+// TOGGLE MODE
+// ══════════════════════════════
+function toggleMode(){
+  isRestMode=!isRestMode;
+  document.body.className=isRestMode?'rest-mode':'show-mode';
+  document.getElementById('showPanel').className='panel'+(isRestMode?'':' active');
+  document.getElementById('restPanel').className='panel'+(isRestMode?' active':'');
+}
+
+// ══════════════════════════════
+// SHOW CHECKBOXES
+// ══════════════════════════════
+function selectMode(mode){
+  showMode=(showMode===mode)?'none':mode;
+  if(showMode==='crash'&&vanManual){vanManual=false;updateVanManualUI();}
+  updateCheckboxUI();calcShow();
+}
+function updateCheckboxUI(){
+  const cPill=document.getElementById('crashPill');
+  const dPill=document.getElementById('domesticPill');
+  cPill.className='cb-pill'+(showMode==='crash'?' active-show':'');
+  dPill.className='cb-pill'+(showMode==='domestic'?' active-show':'');
+  document.getElementById('crashBox').textContent=showMode==='crash'?'✓':'';
+  document.getElementById('domesticBox').textContent=showMode==='domestic'?'✓':'';
+  const vanLabel=document.getElementById('vanLeaveLabel');
+  const vanToggle=document.getElementById('vanToggle');
+  if(showMode==='crash'){
+    vanLabel.textContent='Leave';
+    vanToggle.querySelector('.cb-box').style.display='none';
+    vanToggle.style.pointerEvents='none';
+  } else {
+    vanLabel.textContent='Van';
+    vanToggle.querySelector('.cb-box').style.display='';
+    vanToggle.style.pointerEvents='';
+  }
+}
+
+// ══════════════════════════════
+// VAN MANUAL
+// ══════════════════════════════
+function toggleVanManual(){
+  if(showMode==='crash')return;
+  vanManual=!vanManual;updateVanManualUI();calcShow();
+}
+function updateVanManualUI(){
+  const box=document.getElementById('vanManualBox');
+  const wrap=document.getElementById('vanManualWrap');
+  box.textContent=vanManual?'✓':'';
+  box.style.background='';
+  box.style.borderColor='rgba(200,255,192,0.4)';
+  box.style.boxShadow='';
+  wrap.style.display=vanManual?'block':'none';
+}
+
+// ══════════════════════════════
+// SHOW CALCULATOR
+// ══════════════════════════════
+function calcShow(){
+  const depMins=getPickerMins('dep');
+  // Domestic uses its own show offset (1:00), all others use settings show offset
+  const showOff = showMode==='domestic' ? getOffset('dom_show') : getOffset('show');
+  document.getElementById('showOffset').textContent=fmtOffset(showOff);
+  document.getElementById('showShow').textContent=fmtTime24(depMins-showOff);
+
+  if(vanManual&&showMode!=='crash'){
+    const vanMins=getPickerMins('van');
+    const vanAlarmOff=getOffset('van_alarm');
+    document.getElementById('showAlarm').textContent=fmtTime24(vanMins-vanAlarmOff);
+    document.getElementById('alarmOffset').textContent=fmtOffset(vanAlarmOff)+' (van)';
+    document.getElementById('showVan').textContent=fmtTime24(vanMins);
+    document.getElementById('vanOffset').textContent='manual';
+    return;
+  }
+
+  let alarmOff,vanOff;
+  if(showMode==='crash')        {alarmOff=getOffset('crash_alarm');vanOff=getOffset('crash_leave');}
+  else if(showMode==='domestic'){alarmOff=getOffset('dom_alarm');  vanOff=getOffset('dom_van');}
+  else                          {alarmOff=getOffset('std_alarm');  vanOff=getOffset('std_van');}
+
+  document.getElementById('alarmOffset').textContent=fmtOffset(alarmOff);
+  document.getElementById('vanOffset').textContent=fmtOffset(vanOff);
+  document.getElementById('showAlarm').textContent=fmtTime24(depMins-alarmOff);
+  document.getElementById('showVan').textContent=fmtTime24(depMins-vanOff);
+}
+
+// ══════════════════════════════
+// UTC MANUAL
+// ══════════════════════════════
+function toggleUTCManual(){
+  utcManual=!utcManual;
+  const box=document.getElementById('utcManualBox');
+  const wrap=document.getElementById('utcManualWrap');
+  box.textContent=utcManual?'✓':'';
+  box.style.background=utcManual?'#c0dfff':'';
+  box.style.borderColor=utcManual?'#c0dfff':'rgba(192,223,255,0.35)';
+  box.style.boxShadow=utcManual?'0 0 6px rgba(0,170,255,0.4)':'';
+  wrap.style.display=utcManual?'block':'none';
+  if(utcManual){
+    const now=new Date();
+    pickers.utc.h=now.getUTCHours();
+    pickers.utc.m=now.getUTCMinutes();
+    utcManualOffset=0;
+    updatePickerDisplay('utc');
+  }
+  calcRest();
+}
+
+function getUTCMs(){
+  return utcManual ? Date.now()+utcManualOffset : Date.now();
+}
+function getUTCMinutes(){
+  const d=new Date(getUTCMs());
+  return d.getUTCHours()*60+d.getUTCMinutes()+d.getUTCSeconds()/60;
+}
+
+// ══════════════════════════════
+// REST CALCULATOR
+// ══════════════════════════════
+function calcRest(){updateRestTimer(getPickerMins('wake'));}
+function updateRestTimer(wake){
+  const nowMins=getUTCMinutes();
+  let diff=wake-nowMins;
+  if(diff<0)diff+=1440;
+  const hrs=Math.floor(diff/60),mins=Math.floor(diff%60),secs=Math.floor((diff*60)%60);
+  document.getElementById('restTimer').textContent=
+    String(hrs).padStart(2,'0')+':'+String(mins).padStart(2,'0')+':'+String(secs).padStart(2,'0');
+}
+
+// ══════════════════════════════
+// LIVE TICK
+// ══════════════════════════════
+function tick(){
+  const d=new Date(getUTCMs());
+  document.getElementById('utcClock').textContent=
+    String(d.getUTCHours()).padStart(2,'0')+':'+
+    String(d.getUTCMinutes()).padStart(2,'0')+':'+
+    String(d.getUTCSeconds()).padStart(2,'0');
+  if(utcManual){
+    pickers.utc.h=d.getUTCHours();
+    pickers.utc.m=d.getUTCMinutes();
+    updatePickerDisplay('utc');
+  }
+  updateRestTimer(getPickerMins('wake'));
+}
+setInterval(tick,1000);tick();
+
+// ══════════════════════════════
+// SETTINGS PANEL
+// ══════════════════════════════
+function openSettings(){document.getElementById('settingsOverlay').classList.add('open');}
+function closeSettings(){document.getElementById('settingsOverlay').classList.remove('open');}
+function overlayClick(e){if(e.target.id==='settingsOverlay')closeSettings();}
+
+// ══════════════════════════════
+// INIT
+// ══════════════════════════════
+loadSettings();
+updateCheckboxUI();
+updateVanManualUI();
+calcShow();
+
+// ══════════════════════════════
+// SERVICE WORKER
+// ══════════════════════════════
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+      .then(reg => {
+        console.log('SW registered:', reg.scope);
+        // Force update check
+        reg.update();
+      })
+      .catch(err => console.error('SW failed:', err));
+  });
+}
+</script>
+</body>
+</html>
